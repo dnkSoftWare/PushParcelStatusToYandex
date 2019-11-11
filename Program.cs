@@ -23,6 +23,15 @@ namespace YandexPUSH
             push_id = 0;
             okod = 0;
         }
+        public void PUSHToYandex()
+        {
+            // throw new NotImplementedException();
+        }
+
+        public bool ReadyToPUSH()
+        {
+           return this.push_id > 0 && this.okod > 0 && this.parcel_code.Length > 0;
+        }
     }
     class Program
     {
@@ -40,7 +49,7 @@ namespace YandexPUSH
                 GetDataForMethodPUSH();
             }
 
-            Console.ReadKey();
+           // Console.ReadKey();
         }
 
         private static void GetDataForMethodPUSH()
@@ -50,29 +59,46 @@ namespace YandexPUSH
                 
                 foreach (var parcel in parcels)
                 {
-                   // var data = new PushData(0, 0, "");
-                   FbTransaction tr = fb.GetTransaction(false);
-                  var data = fb.Select(
-                        $"select out_push_id, out_otpravka_kod, out_parcel_code from create_push_by_parcel_1({parcel.parcel_id});", ref tr).Enumerate().ToArray();
-//                  foreach (var d in data)
-//                  {
-                      if (!string.IsNullOrEmpty(data[0]["out_push_id"].ToString()))
-                      {
-                          PUSHToYandex(data[0]["out_otpravka_kod"].ToString(), data[0]["out_parcel_code"].ToString());
-                          fb.Execute("execute procedure set_parcel_history_push_1(:p_push_id, :p_push_status);", ref tr);
-                      }
-                  //}
-                  
-                   tr.Commit();
+
+                    #region Этот код выполняем в одной транзакции
+
+                    FbTransaction tr = fb.GetTransaction(false);
+                    try
+                    {
+                        
+                        var data = fb.Select(
+                            $"select out_push_id, out_otpravka_kod, out_parcel_code from create_push_by_parcel_1({parcel.parcel_id});",
+                            ref tr).Enumerate();
+                        foreach (var d in data)
+                        {
+                            parcel.okod = uint.Parse(d["out_otpravka_kod"].ToString());
+                            parcel.push_id = uint.Parse(d["out_push_id"].ToString());
+                            parcel.parcel_code = d["out_parcel_code"].ToString();
+                        }
+
+
+                        if (parcel.ReadyToPUSH())
+                        {
+                            parcel.PUSHToYandex(); // Кидаем в Яндекс
+                            fb.Execute($"execute procedure set_parcel_history_push_1({parcel.push_id}, 1);",
+                                ref tr); // Фиксим у себя, что ПУШ отправлен
+                        }
+                        tr.Commit();
+
+                    }
+                    catch (FbException ex)
+                    {
+                        tr.Rollback(); 
+                        // todo: тут код логера
+                    }
+
+                    #endregion
                 }
                 
             }
         }
 
-        private static void PUSHToYandex(string otpravka_kod, string parcel_code)
-        {
-           // throw new NotImplementedException();
-        }
+       
 
         private static bool GetParcels()
         {
@@ -80,7 +106,7 @@ namespace YandexPUSH
             
             using (var fb = new FBird(autoconnect:true, hostname, dbname))
             {
-                var _parcels = fb.Select("select out_parcel_id from get_parcel_for_push_1(6);").Enumerate();
+                var _parcels = fb.Select("select first 3 out_parcel_id from get_parcel_for_push_1(6);").Enumerate();
                 foreach (var parcel in _parcels)
                 { 
                     var p = new Parcel(UInt32.Parse(parcel[0].ToString()));
@@ -92,17 +118,5 @@ namespace YandexPUSH
         }
     }
 
-    internal class PushData
-    {
-        public uint out_push_id;
-        public uint out_otpravka_kod;
-        public string out_parcel_code;
 
-        public PushData(uint outPushId, uint outOtpravkaKod, string outParcelCode)
-        {
-            out_push_id = outPushId;
-            out_otpravka_kod = outOtpravkaKod;
-            out_parcel_code = outParcelCode;
-        }
-    }
 }
