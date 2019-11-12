@@ -37,6 +37,7 @@ namespace YandexPUSH
             {
                 
                 yndApi.BaseAddress = new Uri($"https://api-logistic.tst.vs.market.yandex.net/delivery/query-gateway"); 
+
                 foreach (var parcel in parcels)
                 {
                     yndApi.PushOrdersStatusesChanged(parcel);
@@ -45,10 +46,16 @@ namespace YandexPUSH
             }
 
         }
+
+        public override string ToString()
+        {
+            return $"{nameof(parcel_id)}: {parcel_id}, {nameof(parcel_code)}: {parcel_code}, {nameof(push_id)}: {push_id}, {nameof(okod)}: {okod}";
+        }
     }
     class Program
     {
         private static readonly NLog.Logger logger = NLog.LogManager.GetCurrentClassLogger();
+
         private static List<Parcel> parcels; // Список посылок с изменёнными статусами
         private static string hostname = "testdb";
         private static string dbname = "kur2003";
@@ -91,7 +98,7 @@ namespace YandexPUSH
                         
                         var data = fb.Select(
                             $"select out_push_id, out_otpravka_kod, out_parcel_code from create_push_by_parcel_1({parcel.parcel_id});",
-                            ref tr).Enumerate();
+                            ref tr/*транзакция создаётся и открывается внутри и передаётся наружу*/).Enumerate();
                         foreach (var d in data)
                         {
                             parcel.okod = uint.Parse(d["out_otpravka_kod"].ToString());
@@ -105,17 +112,24 @@ namespace YandexPUSH
                         {
                             var localParcel = new List<Parcel>();
                             localParcel.Add(parcel);
+
                             parcel.PUSHToYandex(logger, localParcel); // Кидаем в Яндекс
+
                             fb.Execute($"execute procedure set_parcel_history_push_1({parcel.push_id}, 1);",
-                                ref tr); // Фиксим у себя, что ПУШ отправлен
+                                ref tr/*подхватили ранее открытую транзакцию*/); // Фиксим у себя, что ПУШ отправлен
+                            
+                            tr.Commit(); // Сюда дошли, значит всё ок коммитимся
                         }
-                        tr.Commit();
+                        else
+                        {
+                            logger.Warn($"Проблема при отправке заказа:{parcel.ToString()}");
+                        }
 
                     }
                     catch (FbException ex)
                     {
                         tr.Rollback(); 
-                        // todo: тут код логера
+                        logger.Error($"Error:{ex.Message}");
                     }
 
                     #endregion
