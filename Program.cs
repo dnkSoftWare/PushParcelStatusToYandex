@@ -6,9 +6,11 @@ using System.Text;
 using System.Threading.Tasks;
 using FBirdLib;
 using FirebirdSql.Data.FirebirdClient;
+using NLog;
 
 namespace YandexPUSH
 {
+
     class Parcel
     {
         public uint parcel_id;
@@ -23,18 +25,30 @@ namespace YandexPUSH
             push_id = 0;
             okod = 0;
         }
-        public void PUSHToYandex()
-        {
-            // throw new NotImplementedException();
-        }
 
         public bool ReadyToPUSH()
         {
            return this.push_id > 0 && this.okod > 0 && this.parcel_code.Length > 0;
         }
+
+        public void PUSHToYandex(ILogger logger, List<Parcel> parcels)
+        {
+            using (var yndApi = new YandexAPI(logger))
+            {
+                
+                yndApi.BaseAddress = new Uri($"https://api-logistic.tst.vs.market.yandex.net/delivery/query-gateway"); 
+                foreach (var parcel in parcels)
+                {
+                    yndApi.PushOrdersStatusesChanged(parcel);
+                }
+                
+            }
+
+        }
     }
     class Program
     {
+        private static readonly NLog.Logger logger = NLog.LogManager.GetCurrentClassLogger();
         private static List<Parcel> parcels; // Список посылок с изменёнными статусами
         private static string hostname = "testdb";
         private static string dbname = "kur2003";
@@ -42,14 +56,23 @@ namespace YandexPUSH
 
         static void Main(string[] args)
         {
-            
-
-            if (GetParcels()) // Получение данных для отправки
+            try
             {
-                GetDataForMethodPUSH();
-            }
+                if (GetParcels()) // Получение данных для отправки
+                {
+                    GetDataForMethodPUSH();
+                }
 
-           // Console.ReadKey();
+            }
+            catch (Exception e)
+            {
+                logger.Error(e, e.Message);
+            }
+            finally
+            {
+                NLog.LogManager.Shutdown();
+            }
+            // Console.ReadKey();
         }
 
         private static void GetDataForMethodPUSH()
@@ -77,9 +100,12 @@ namespace YandexPUSH
                         }
 
 
+
                         if (parcel.ReadyToPUSH())
                         {
-                            parcel.PUSHToYandex(); // Кидаем в Яндекс
+                            var localParcel = new List<Parcel>();
+                            localParcel.Add(parcel);
+                            parcel.PUSHToYandex(logger, localParcel); // Кидаем в Яндекс
                             fb.Execute($"execute procedure set_parcel_history_push_1({parcel.push_id}, 1);",
                                 ref tr); // Фиксим у себя, что ПУШ отправлен
                         }
