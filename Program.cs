@@ -36,11 +36,13 @@ namespace YandexPUSH
             using (var yndApi = new YandexAPI(logger))
             {
                 
-                yndApi.BaseAddress = new Uri($"https://api-logistic.tst.vs.market.yandex.net/delivery/query-gateway"); 
+                yndApi.BaseAddress = new Uri($"https://api-logistic.vs.market.yandex.net/delivery/query-gateway"); 
 
                 foreach (var parcel in parcels)
                 {
+                    logger.Info("Отправка пуша по:"+parcel.ToString());
                     yndApi.PushOrdersStatusesChanged(parcel);
+                    
                 }
                 
             }
@@ -57,7 +59,7 @@ namespace YandexPUSH
         private static readonly NLog.Logger logger = NLog.LogManager.GetCurrentClassLogger();
 
         private static List<Parcel> parcels; // Список посылок с изменёнными статусами
-        private static string hostname = "testdb";
+        private static string hostname = "proddb";
         private static string dbname = "kur2003";
         //private static List<string> dataBase  = new List<string>(){ } ;
 
@@ -70,6 +72,7 @@ namespace YandexPUSH
                     GetDataForMethodPUSH();
                 }
 
+               // throw new ArgumentException("нет данных!");
             }
             catch (Exception e)
             {
@@ -146,7 +149,7 @@ namespace YandexPUSH
             
             using (var fb = new FBird(autoconnect:true, hostname, dbname))
             {
-                var _parcels = fb.Select("select first 3 out_parcel_id from get_parcel_for_push_1(6);").Enumerate();
+                var _parcels = fb.Select("select out_parcel_id from get_parcel_for_push_1(6);").Enumerate();
                 foreach (var parcel in _parcels)
                 { 
                     var p = new Parcel(UInt32.Parse(parcel[0].ToString()));

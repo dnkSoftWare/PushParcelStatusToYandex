@@ -26,7 +26,7 @@ namespace YandexPUSH
         {
             string resp;
                 var content = new ByteArrayContent(Encoding.UTF8.GetBytes(xmlData));
-                content.Headers.Add("Content-Type", "text/plain");
+                content.Headers.Add("Content-Type", "text/xml");
                 var response = await PostAsync(uri, content);
                 response.EnsureSuccessStatusCode();
                 resp = await response.Content.ReadAsStringAsync();
@@ -51,18 +51,27 @@ namespace YandexPUSH
                 var deliveryId = orderId.InsertElement("deliveryId", parcel.okod.ToString());
 //            }
             xml.AppendChild(root);
-                _logger.Info("REQUEST:"+xml.Beautify());
+
+           // _logger.Info("REQUEST:"+xml.Beautify());
+
             var task = RequestPostAsync(BaseAddress.AbsoluteUri, xml.OuterXml);
+
             var response = "";
             task.ContinueWith(t =>
                 {
                     response = t.Result;
                     if (task.IsCompleted && response.Length > 0)
-                       // todo : логгер по результату запроса
-                    _logger.Info("RESPONCE:\n"+response);
+                    {
+                        if (!response.Contains("<isError>false</isError>"))
+                          _logger.Info("RESPONCE:\n" + response);
+                        else
+                          _logger.Info("Успешно!");
+
+                    }
                     res = response;
+
                 })
-                .Wait(5 * 1000); // Ожидаем 30 секунд и выходим!
+                .Wait(5 * 1000); // Ожидаем 5 секунд и выходим!
             return res;
         }
         public static string CalculateMD5Hash(string input)
