@@ -35,9 +35,9 @@ namespace YandexPUSH
 
 
 
-        public string PushOrdersStatusesChanged(Parcel  parcel)
+        public bool PushOrdersStatusesChanged(Parcel  parcel)
         {
-            var res = "";
+            var res = false;
             var root = xml.CreateElement("root");
             var tokenElement = root.InsertElement("token", token);
             var hashElement = root.InsertElement("hash", CalculateMD5Hash(parcel.parcel_code));
@@ -62,13 +62,10 @@ namespace YandexPUSH
                     response = t.Result;
                     if (task.IsCompleted && response.Length > 0)
                     {
-                        if (!response.Contains("<isError>false</isError>"))
-                          _logger.Info("RESPONCE:\n" + response);
-                        else
-                          _logger.Info("Успешно!");
-
+                        res = response.Contains("<isError>false</isError>");
+                        if (!res)
+                            _logger.Info("RESPONCE:\n" + response);
                     }
-                    res = response;
 
                 })
                 .Wait(5 * 1000); // Ожидаем 5 секунд и выходим!

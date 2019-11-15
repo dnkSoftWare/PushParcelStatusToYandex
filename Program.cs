@@ -31,22 +31,23 @@ namespace YandexPUSH
            return this.push_id > 0 && this.okod > 0 && this.parcel_code.Length > 0;
         }
 
-        public void PUSHToYandex(ILogger logger, List<Parcel> parcels)
+        public bool PUSHToYandex(ILogger logger, List<Parcel> parcels)
         {
+            var res = true;
             using (var yndApi = new YandexAPI(logger))
             {
-                
+
                 yndApi.BaseAddress = new Uri($"https://api-logistic.vs.market.yandex.net/delivery/query-gateway"); 
 
                 foreach (var parcel in parcels)
                 {
                     logger.Info("Отправка пуша по:"+parcel.ToString());
-                    yndApi.PushOrdersStatusesChanged(parcel);
-                    
+                    res = res && yndApi.PushOrdersStatusesChanged(parcel);
                 }
                 
             }
 
+            return res;
         }
 
         public override string ToString()
@@ -66,9 +67,11 @@ namespace YandexPUSH
         static void Main(string[] args)
         {
             try
-            {
+            { 
+                logger.Info("----===== Старт =====----");
                 if (GetParcels()) // Получение данных для отправки
                 {
+                    logger.Info($"Получено уведомлений по {parcels.Count} посылкам.");
                     GetDataForMethodPUSH();
                 }
 
@@ -80,6 +83,7 @@ namespace YandexPUSH
             }
             finally
             {
+                logger.Info("----======= Финиш =======----");
                 NLog.LogManager.Shutdown();
             }
             // Console.ReadKey();
@@ -89,54 +93,61 @@ namespace YandexPUSH
         {
             using (var fb = new FBird(true, hostname, dbname ))
             {
+                FbTransaction tr = fb.GetTransaction(false); // Танзакция будет одна на весь список
                 
-                foreach (var parcel in parcels)
-                {
+                    #region Этот код выполняем в одной транзакции 
 
-                    #region Этот код выполняем в одной транзакции
-
-                    FbTransaction tr = fb.GetTransaction(false);
-                    try
+                    foreach (var parcel in parcels)
                     {
-                        
-                        var data = fb.Select(
-                            $"select out_push_id, out_otpravka_kod, out_parcel_code from create_push_by_parcel_1({parcel.parcel_id});",
-                            ref tr/*транзакция создаётся и открывается внутри и передаётся наружу*/).Enumerate();
-                        foreach (var d in data)
+                        try
                         {
-                            parcel.okod = uint.Parse(d["out_otpravka_kod"].ToString());
-                            parcel.push_id = uint.Parse(d["out_push_id"].ToString());
-                            parcel.parcel_code = d["out_parcel_code"].ToString();
+
+                            var data = fb.Select(
+                                $"select out_push_id, out_otpravka_kod, out_parcel_code from create_push_by_parcel_1({parcel.parcel_id});",
+                                ref tr).Enumerate();
+                            foreach (var d in data)
+                            {
+                                parcel.okod = uint.Parse(d["out_otpravka_kod"].ToString());
+                                parcel.push_id = uint.Parse(d["out_push_id"].ToString());
+                                parcel.parcel_code = d["out_parcel_code"].ToString();
+                            }
+
+                            if (parcel.ReadyToPUSH())
+                            {
+                                var localParcel = new List<Parcel>();
+                                localParcel.Add(parcel);
+
+                                if (parcel.PUSHToYandex(logger, localParcel)) // Кидаем в Яндекс
+                                {
+                                    fb.Execute($"execute procedure set_parcel_history_push_1({parcel.push_id}, 1);",
+                                        ref tr /*подхватили ранее открытую транзакцию*/); // Фиксим у себя, что ПУШ отправлен
+
+                                    tr.CommitRetaining(); // Сюда дошли, значит всё ок коммитимся
+                                    logger.Info("Успешно оправлено и зафиксено!");
+                                }
+                                else
+                                {
+                                    tr.RollbackRetaining();
+                                    logger.Warn($"Проблема при отправке заказа:{parcel.ToString()}");
+                                }
+                            }
+                            else
+                            {
+                                tr.RollbackRetaining();
+                                logger.Warn($"Проблема при получении данных по заказу:{parcel.ToString()}");
+                            }
+
+                        }
+                        catch (FbException ex)
+                        {
+                            tr.RollbackRetaining();
+                            logger.Error($"Error:{ex.Message}");
                         }
 
 
-
-                        if (parcel.ReadyToPUSH())
-                        {
-                            var localParcel = new List<Parcel>();
-                            localParcel.Add(parcel);
-
-                            parcel.PUSHToYandex(logger, localParcel); // Кидаем в Яндекс
-
-                            fb.Execute($"execute procedure set_parcel_history_push_1({parcel.push_id}, 1);",
-                                ref tr/*подхватили ранее открытую транзакцию*/); // Фиксим у себя, что ПУШ отправлен
-                            
-                            tr.Commit(); // Сюда дошли, значит всё ок коммитимся
-                        }
-                        else
-                        {
-                            logger.Warn($"Проблема при отправке заказа:{parcel.ToString()}");
-                        }
-
-                    }
-                    catch (FbException ex)
-                    {
-                        tr.Rollback(); 
-                        logger.Error($"Error:{ex.Message}");
                     }
 
                     #endregion
-                }
                 
             }
         }
