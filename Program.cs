@@ -17,6 +17,7 @@ namespace YandexPUSH
         public string parcel_code;
         public uint push_id;
         public uint okod;
+        public int error_sended; // Ошибка при отправлении
 
         public Parcel(uint parcelId)
         {
@@ -24,6 +25,7 @@ namespace YandexPUSH
             parcel_code = "";
             push_id = 0;
             okod = 0;
+            error_sended = 0;
         }
 
         public bool ReadyToPUSH()
@@ -41,7 +43,7 @@ namespace YandexPUSH
 
                 foreach (var parcel in parcels)
                 {
-                    logger.Info("Отправка пуша по:"+parcel.ToString());
+                   //  logger.Info("Отправка пуша по:"+parcel.ToString());
                     res = res && yndApi.PushOrdersStatusesChanged(parcel);
                 }
                 
@@ -71,8 +73,25 @@ namespace YandexPUSH
                 logger.Info("----===== Старт =====----");
                 if (GetParcels()) // Получение данных для отправки
                 {
-                    logger.Info($"Получено уведомлений по {parcels.Count} посылкам.");
+                    logger.Info($"Получено уведомлений по изменению статусов: {parcels.Count} ");
                     GetDataForMethodPUSH();
+                    double percent1 = (double)parcels.Count / 100;
+                    double percent10 = (percent1*10);
+                    double error_percent = (double) parcels.Count(p => p.error_sended > 0) / percent1;
+
+                    var log_message = $"Статистика:\r\n\t - получено уведомлений по изменению статусов:{parcels.Count}" +
+                                      $"\r\n\t - отправлено успешно уведомлений:{parcels.Count(p => p.error_sended == 0)}" +
+                                      $"\r\n\t - получено ошибок при отправлении:{parcels.Count(p => p.error_sended > 0)}" +
+                                      $"\r\n\t   Что составляет: {Math.Round(error_percent,2)} %";
+                    if (parcels.Count(p => p.error_sended > 0) > (percent10) )
+                    {
+                        logger.Error( log_message);
+                    }
+                    else
+                    {
+                        logger.Info(log_message);
+                    }
+
                 }
 
                // throw new ArgumentException("нет данных!");
@@ -123,10 +142,11 @@ namespace YandexPUSH
                                         ref tr /*подхватили ранее открытую транзакцию*/); // Фиксим у себя, что ПУШ отправлен
 
                                     tr.CommitRetaining(); // Сюда дошли, значит всё ок коммитимся
-                                    logger.Info("Успешно оправлено и зафиксено!");
+                                    logger.Info($"Успех [{parcel.ToString()}]");
                                 }
                                 else
                                 {
+                                    parcel.error_sended = 1;
                                     tr.RollbackRetaining();
                                     logger.Warn($"Проблема при отправке заказа:{parcel.ToString()}");
                                 }
@@ -140,6 +160,7 @@ namespace YandexPUSH
                         }
                         catch (FbException ex)
                         {
+                            parcel.error_sended = 2; // Fatal error
                             tr.RollbackRetaining();
                             logger.Error($"Error:{ex.Message}");
                         }
