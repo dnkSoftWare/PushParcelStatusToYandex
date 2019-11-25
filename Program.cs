@@ -208,10 +208,9 @@ namespace YandexPUSH
                         File.Delete(file_error);
                      }
                  }
-                 else
-                 {
-                     File.AppendAllText(file_error, log_message);
-                 }
+                
+                 File.AppendAllText(file_error, log_message);
+                 
             }
         }
     }
