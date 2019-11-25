@@ -199,18 +199,17 @@ namespace YandexPUSH
                  if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
                  var file_error  = Path.Combine(folder, @"Errors.txt");
 
-                 if (File.Exists(file_error))
-                 {
+                File.AppendAllText(file_error, log_message);
+
+                if (File.Exists(file_error))
+                {
                      if (File.GetCreationTime(file_error) <= DateTime.Now.AddMinutes(-minuten))
                      {
                         logger.Error(File.ReadAllText(file_error));
                         Thread.Sleep(2000);
                         File.Delete(file_error);
                      }
-                 }
-                
-                 File.AppendAllText(file_error, log_message);
-                 
+                }
             }
         }
     }
