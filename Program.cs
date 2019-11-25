@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.AccessControl;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using FBirdLib;
 using FirebirdSql.Data.FirebirdClient;
@@ -74,23 +76,9 @@ namespace YandexPUSH
                 if (GetParcels()) // Получение данных для отправки
                 {
                     logger.Info($"Получено уведомлений по изменению статусов: {parcels.Count} ");
-                    GetDataForMethodPUSH();
-                    double percent1 = (double)parcels.Count / 100;
-                    double percent10 = (percent1*10);
-                    double error_percent = (double) parcels.Count(p => p.error_sended > 0) / percent1;
+                    GetDataForMethodPUSH(); // Собственно отправка
 
-                    var log_message = $"Статистика:\r\n\t - получено уведомлений по изменению статусов:{parcels.Count}" +
-                                      $"\r\n\t - отправлено успешно уведомлений:{parcels.Count(p => p.error_sended == 0)}" +
-                                      $"\r\n\t - получено ошибок при отправлении:{parcels.Count(p => p.error_sended > 0)}" +
-                                      $"\r\n\t   Что составляет: {Math.Round(error_percent,2)} %";
-                    if (parcels.Count(p => p.error_sended > 0) > (percent10) )
-                    {
-                        logger.Error( log_message);
-                    }
-                    else
-                    {
-                        logger.Info(log_message);
-                    }
+                    SendError(30, 10);
 
                 }
 
@@ -172,9 +160,6 @@ namespace YandexPUSH
                 
             }
         }
-
-       
-
         private static bool GetParcels()
         {
             parcels = new List<Parcel>();
@@ -190,6 +175,44 @@ namespace YandexPUSH
             }
 
             return (parcels.Count > 0);
+        }
+
+        /// <summary>
+        ///  отправка отчета об ошибках за указанное кол-во минут
+        /// </summary>
+        /// <param name="minuten">Кол-во минут буферизации ошибок </param>
+        /// <param name="percent">Процент ошибок при отправке</param>
+        private static void SendError(int minuten, int percent)
+        {
+            double percent1 = (double)parcels.Count / 100;
+            double percent10 = (percent1 * percent);
+            double error_percent = (double)parcels.Count(p => p.error_sended > 0) / percent1;
+
+            var log_message = $"{DateTime.Now.ToLocalTime()} Статистика:" +
+                              $"\r\n\t - получено уведомлений по изменению статусов:{parcels.Count}" +
+                              $"\r\n\t - отправлено успешно уведомлений:{parcels.Count(p => p.error_sended == 0)}" +
+                              $"\r\n\t - получено ошибок при отправлении:{parcels.Count(p => p.error_sended > 0)}" +
+                              $"\r\n\t   Что составляет: {Math.Round(error_percent, 2)} % \r\n";
+            if (parcels.Count(p => p.error_sended > 0) > (percent10))
+            {
+                var folder = AppDomain.CurrentDomain.BaseDirectory + "Tmp";
+                 if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
+                 var file_error  = Path.Combine(folder, @"Errors.txt");
+
+                 if (File.Exists(file_error))
+                 {
+                     if (File.GetCreationTime(file_error) <= DateTime.Now.AddMinutes(-minuten))
+                     {
+                        logger.Error(File.ReadAllText(file_error));
+                        Thread.Sleep(2000);
+                        File.Delete(file_error);
+                     }
+                 }
+                 else
+                 {
+                     File.AppendAllText(file_error, log_message);
+                 }
+            }
         }
     }
 
