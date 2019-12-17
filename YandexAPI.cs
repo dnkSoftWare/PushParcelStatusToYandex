@@ -44,15 +44,11 @@ namespace YandexPUSH
             var requestElement = root.InsertElement("request"); requestElement.AddAttribute("type", "pushOrdersStatusesChanged");
             var ordersIds = requestElement.InsertElement("ordersIds");
 
-//            foreach (var parcel in parcels)
-//            {
-                var orderId = ordersIds.InsertElement("orderId");
-                var yandexId = orderId.InsertElement("yandexId", parcel.parcel_code);
-                var deliveryId = orderId.InsertElement("deliveryId", parcel.okod.ToString());
-//            }
-            xml.AppendChild(root);
+            var orderId = ordersIds.InsertElement("orderId");
+            var yandexId = orderId.InsertElement("yandexId", parcel.parcel_code);
+            var deliveryId = orderId.InsertElement("deliveryId", parcel.okod.ToString());
 
-           // _logger.Info("REQUEST:"+xml.Beautify());
+            xml.AppendChild(root);
 
             var task = RequestPostAsync(BaseAddress.AbsoluteUri, xml.OuterXml);
 

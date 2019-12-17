@@ -9,56 +9,11 @@ using System.Threading.Tasks;
 using FBirdLib;
 using FirebirdSql.Data.FirebirdClient;
 using NLog;
+//using YandexPUSH.Parcel;
+
 
 namespace YandexPUSH
 {
-
-    class Parcel
-    {
-        public uint parcel_id;
-        public string parcel_code;
-        public uint push_id;
-        public uint okod;
-        public int error_sended; // Ошибка при отправлении
-
-        public Parcel(uint parcelId)
-        {
-            parcel_id = parcelId;
-            parcel_code = "";
-            push_id = 0;
-            okod = 0;
-            error_sended = 0;
-        }
-
-        public bool ReadyToPUSH()
-        {
-           return this.push_id > 0 && this.okod > 0 && this.parcel_code.Length > 0;
-        }
-
-        public bool PUSHToYandex(ILogger logger, List<Parcel> parcels)
-        {
-            var res = true;
-            using (var yndApi = new YandexAPI(logger))
-            {
-
-                yndApi.BaseAddress = new Uri($"https://api-logistic.vs.market.yandex.net/delivery/query-gateway"); 
-
-                foreach (var parcel in parcels)
-                {
-                   //  logger.Info("Отправка пуша по:"+parcel.ToString());
-                    res = res && yndApi.PushOrdersStatusesChanged(parcel);
-                }
-                
-            }
-
-            return res;
-        }
-
-        public override string ToString()
-        {
-            return $"{nameof(parcel_id)}: {parcel_id}, {nameof(parcel_code)}: {parcel_code}, {nameof(push_id)}: {push_id}, {nameof(okod)}: {okod}";
-        }
-    }
     class Program
     {
         private static readonly NLog.Logger logger = NLog.LogManager.GetCurrentClassLogger();
@@ -66,23 +21,22 @@ namespace YandexPUSH
         private static List<Parcel> parcels; // Список посылок с изменёнными статусами
         private static string hostname = "proddb";
         private static string dbname = "kur2003";
-        //private static List<string> dataBase  = new List<string>(){ } ;
+        private static int principalId = 6;
 
         static void Main(string[] args)
         {
             try
             { 
                 logger.Info("----===== Старт =====----");
-                if (GetParcels()) // Получение данных для отправки
+                if (GetParcels($"select out_parcel_id from get_parcel_for_push_1({principalId});")) // Получение данных для отправки
                 {
                     logger.Info($"Получено уведомлений по изменению статусов: {parcels.Count} ");
-                    GetDataForMethodPUSH(); // Собственно отправка
+                    GetDataAndPush(); // Собственно отправка
 
                     SendError(30, 10);
 
                 }
 
-               // throw new ArgumentException("нет данных!");
             }
             catch (Exception e)
             {
@@ -93,10 +47,9 @@ namespace YandexPUSH
                 logger.Info("----======= Финиш =======----");
                 NLog.LogManager.Shutdown();
             }
-            // Console.ReadKey();
         }
 
-        private static void GetDataForMethodPUSH()
+        private static void GetDataAndPush()
         {
             using (var fb = new FBird(true, hostname, dbname ))
             {
@@ -160,13 +113,19 @@ namespace YandexPUSH
                 
             }
         }
-        private static bool GetParcels()
+
+        /// <summary>
+        /// Получение списка заказов по которым изменились статусы 
+        /// </summary>
+        /// <param name="selectOutParcelIdFromGetParcelForPush"></param>
+        /// <returns>true если есть данные в списке</returns>
+        private static bool GetParcels(string selectOutParcelIdFromGetParcelForPush)
         {
             parcels = new List<Parcel>();
             
             using (var fb = new FBird(autoconnect:true, hostname, dbname))
             {
-                var _parcels = fb.Select("select out_parcel_id from get_parcel_for_push_1(6);").Enumerate();
+                var _parcels = fb.Select(selectOutParcelIdFromGetParcelForPush).Enumerate();
                 foreach (var parcel in _parcels)
                 { 
                     var p = new Parcel(UInt32.Parse(parcel[0].ToString()));
@@ -203,7 +162,8 @@ namespace YandexPUSH
 
                 if (File.Exists(file_error))
                 {
-                     if (File.GetCreationTime(file_error) <= DateTime.Now.AddMinutes(-minuten))
+                    TimeSpan ts = DateTime.Now - File.GetCreationTime(file_error); //TimeSpan.TicksPerMinute
+                     if ( ts.Minutes > minuten )
                      {
                         logger.Error(File.ReadAllText(file_error));
                         Thread.Sleep(2000);
