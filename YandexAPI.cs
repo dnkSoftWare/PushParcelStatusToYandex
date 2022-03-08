@@ -16,11 +16,6 @@ namespace YandexPUSH
         {
             _logger = logger;
             _token = token;
-            xml = new XmlDocument();
-            
-            XmlNode docNode = xml.CreateXmlDeclaration("1.0", "UTF-8", null);
-            xml.AppendChild(docNode);
-
         }
 
         private async Task<string> RequestPostAsync(string uri, string xmlData)
@@ -39,6 +34,9 @@ namespace YandexPUSH
         public bool PushOrdersStatusesChanged(Parcel  parcel)
         {
             var res = false;
+            xml = new XmlDocument();
+            XmlNode docNode = xml.CreateXmlDeclaration("1.0", "UTF-8", null);
+            xml.AppendChild(docNode);
             var root = xml.CreateElement("root");
             var tokenElement = root.InsertElement("token", _token);
             var hashElement = root.InsertElement("hash", CalculateMD5Hash(parcel.parcel_code));
