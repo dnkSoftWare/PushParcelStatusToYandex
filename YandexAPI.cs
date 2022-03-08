@@ -11,10 +11,11 @@ namespace YandexPUSH
     {
         private readonly ILogger _logger;
         public XmlDocument xml;
-        private static string token = "PRjHI9Q9kvfH6thGY5ttBnzI05nw4gWpjYvHD7eb2oP4MsRBCzP4WNAVTlEqeK16";
-        public YandexAPI(ILogger logger): base()
+        private static string _token;
+        public YandexAPI(ILogger logger, string token): base()
         {
             _logger = logger;
+            _token = token;
             xml = new XmlDocument();
             
             XmlNode docNode = xml.CreateXmlDeclaration("1.0", "UTF-8", null);
@@ -39,7 +40,7 @@ namespace YandexPUSH
         {
             var res = false;
             var root = xml.CreateElement("root");
-            var tokenElement = root.InsertElement("token", token);
+            var tokenElement = root.InsertElement("token", _token);
             var hashElement = root.InsertElement("hash", CalculateMD5Hash(parcel.parcel_code));
             var requestElement = root.InsertElement("request"); requestElement.AddAttribute("type", "pushOrdersStatusesChanged");
             var ordersIds = requestElement.InsertElement("ordersIds");
